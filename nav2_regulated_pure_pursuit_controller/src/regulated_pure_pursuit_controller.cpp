@@ -19,6 +19,8 @@
 #include <memory>
 #include <vector>
 #include <utility>
+#include <fstream>
+#include <filesystem>
 
 #include "nav2_regulated_pure_pursuit_controller/regulated_pure_pursuit_controller.hpp"
 #include "nav2_core/exceptions.hpp"
@@ -364,6 +366,22 @@ geometry_msgs::msg::TwistStamped RegulatedPurePursuitController::computeVelocity
   cmd_vel.header = pose.header;
   cmd_vel.twist.linear.x = linear_vel;
   cmd_vel.twist.angular.z = angular_vel;
+
+  std::ofstream logFile("/home/markilius/nav2_ws/src/transformGlobalPlan.txt", std::ios::app);
+  
+  if (logFile.is_open()) {
+      logFile << "lookahead_dist: " << lookahead_dist << "\n";
+      logFile << "carrot_pose: ("
+                      << carrot_pose.pose.position.x << ", "
+                      << carrot_pose.pose.position.y << ")\n";
+
+      logFile << "carrot_dist2: " << carrot_dist2 << "\n";
+      logFile << "curvature: " << curvature << "\n";
+
+      logFile << "cmd_vel: ("
+                      << cmd_vel.twist.linear.x << ", "
+                      << cmd_vel.twist.angular.z << ")\n\n";
+  }
   return cmd_vel;
 }
 
@@ -440,12 +458,68 @@ geometry_msgs::msg::PoseStamped RegulatedPurePursuitController::getLookAheadPoin
   // Find the first pose which is at a distance greater than the lookahead distance
   auto goal_pose_it = std::find_if(
     transformed_plan.poses.begin(), transformed_plan.poses.end(), [&](const auto & ps) {
-      return hypot(ps.pose.position.x, ps.pose.position.y) >= lookahead_dist;
+      return hypot(ps.pose.position.x, ps.pose.position.y) >= lookahead_dist && ps.pose.position.x >= 0;
     });
+
+  size_t index = std::distance(transformed_plan.poses.begin(), goal_pose_it);
+
+  std::ofstream logFile("/home/markilius/nav2_ws/src/transformGlobalPlan.txt", std::ios::app);
+
+  // Prune global_plan_ in the range [0, index)
+  // size_t old_size = global_plan_.poses.size();
+  // global_plan_.poses.erase(
+  //   global_plan_.poses.begin(), 
+  //   std::next(global_plan_.poses.begin(), std::min(index, global_plan_.poses.size()))
+  // );
+
+  // if (old_size > global_plan_.poses.size()) {
+  //   logFile << "global_plan pruned \n";
+  //   // logFile << "global_plan after erase: [";
+  //   for (size_t j = 0; j < global_plan_.poses.size(); ++j) {
+  //       logFile << j << ":(" << global_plan_.poses[j].pose.position.x << ", "
+  //               << global_plan_.poses[j].pose.position.y << ")";
+  //       if (j < global_plan_.poses.size() - 1) {
+  //           logFile << ", ";
+  //       }
+  //   }
+  //   logFile << "]\n\n";
+  // }
+
+  
+  if (logFile.is_open()) {
+      logFile << "lookahead_index: " << index << "\n";
+      logFile << "goal_pose: ("
+                      << goal_pose_it->pose.position.x << ", "
+                      << goal_pose_it->pose.position.y << ")\n";
+  }
 
   // If the no pose is not far enough, take the last pose
   if (goal_pose_it == transformed_plan.poses.end()) {
+    // Start with the last valid pose
     goal_pose_it = std::prev(transformed_plan.poses.end());
+    size_t index = transformed_plan.poses.size() - 1; // Initialize index to the last pose
+
+    // // Traverse backward while position.x < 0 and not at the beginning
+    // do {
+    //   if (goal_pose_it->pose.position.x >= 0) {
+    //     break; // Condition met, exit the loop
+    //   }
+
+    //   // if (goal_pose_it == transformed_plan.poses.begin()) {
+    //   //   throw std::runtime_error("No valid goal_pose with position.x >= 0 found.");
+    //   // }
+
+    //   goal_pose_it = std::prev(goal_pose_it); // Move backward
+    //   --index; // Decrement the index
+    // } while (true);
+
+    if (logFile.is_open()) {
+    logFile << "corrected lookahead_index: " << index << "\n";
+    logFile << "corrected goal_pose: ("
+                    << goal_pose_it->pose.position.x << ", "
+                    << goal_pose_it->pose.position.y << ")\n";
+    }
+
   } else if (use_interpolation_ && goal_pose_it != transformed_plan.poses.begin()) {
     // Find the point on the line segment between the two poses
     // that is exactly the lookahead distance away from the robot pose (the origin)
@@ -712,19 +786,52 @@ nav_msgs::msg::Path RegulatedPurePursuitController::transformGlobalPlan(
   // First find the closest pose on the path to the robot
   // bounded by when the path turns around (if it does) so we don't get a pose from a later
   // portion of the path
-  auto transformation_begin =
-    nav2_util::geometry_utils::min_by(
-    global_plan_.poses.begin(), closest_pose_upper_bound,
-    [&robot_pose](const geometry_msgs::msg::PoseStamped & ps) {
-      return euclidean_distance(robot_pose, ps);
-    });
+  // Open log file
+  std::ofstream logFile("/home/markilius/nav2_ws/src/transformGlobalPlan.txt", std::ios::app);
+  // static bool first_point_on_path_reached = false;
+
+  // if (euclidean_distance(robot_pose, global_plan_.poses.front()) < 0.5 && !first_point_on_path_reached) {
+  //     first_point_on_path_reached = true;
+  //     logFile << "Arrived at first position on path\n";
+  // }
+
+  // auto transformation_begin = global_plan_.poses.begin();  // declare outside
+  
+  // if (first_point_on_path_reached) {
+  //     transformation_begin = nav2_util::geometry_utils::min_by(
+  //         global_plan_.poses.begin(), closest_pose_upper_bound,
+  //         [&robot_pose](const geometry_msgs::msg::PoseStamped & ps) {
+  //             return euclidean_distance(robot_pose, ps);
+  //         });
+  // }
+
+  auto transformation_begin = nav2_util::geometry_utils::min_by(
+          global_plan_.poses.begin(), closest_pose_upper_bound,
+          [&robot_pose](const geometry_msgs::msg::PoseStamped & ps) {
+              return euclidean_distance(robot_pose, ps);
+          });
+
+  /*The same as above implementation */
+  
+  /*dist_to_robot_pose = [&robot_pose](const geometry_msgs::msg::PoseStamped & ps) {
+    return euclidean_distance(robot_pose, ps);
+  };
+  
+  auto transformation_begin = nav2_util::geometry_utils::min_by(
+    global_plan_.poses.begin(), closest_pose_upper_bound, dist_to_robot_pose); */
+
+    
 
   // Find points up to max_transform_dist so we only transform them.
-  auto transformation_end = std::find_if(
-    transformation_begin, global_plan_.poses.end(),
-    [&](const auto & pose) {
-      return euclidean_distance(pose, robot_pose) > max_costmap_extent;
-    });
+  // auto transformation_end = std::find_if(
+  //   transformation_begin, global_plan_.poses.end(),
+  //   [&](const auto & pose) {
+  //     return euclidean_distance(pose, robot_pose) > max_costmap_extent;
+  //   });
+
+  auto transformation_end =
+    nav2_util::geometry_utils::first_after_integrated_distance(
+    transformation_begin, global_plan_.poses.end(), max_costmap_extent);
 
   // Lambda to transform a PoseStamped from global frame to local
   auto transformGlobalPoseToLocal = [&](const auto & global_plan_pose) {
@@ -737,6 +844,12 @@ nav_msgs::msg::Path RegulatedPurePursuitController::transformGlobalPlan(
       return transformed_pose;
     };
 
+  
+
+  if (std::next(transformation_begin) == transformation_end && transformation_end != global_plan_.poses.end()) {
+    logFile << "Moving transformation_end to include one more point\n";
+    transformation_end = std::next(transformation_end);
+  }
   // Transform the near part of the global plan into the robot's frame of reference.
   nav_msgs::msg::Path transformed_plan;
   std::transform(
@@ -746,12 +859,108 @@ nav_msgs::msg::Path RegulatedPurePursuitController::transformGlobalPlan(
   transformed_plan.header.frame_id = costmap_ros_->getBaseFrameID();
   transformed_plan.header.stamp = robot_pose.header.stamp;
 
-  // Remove the portion of the global plan that we've already passed so we don't
-  // process it on the next iteration (this is called path pruning)
-  global_plan_.poses.erase(begin(global_plan_.poses), transformation_begin);
+  
+  
+  // Log static values on first call
+  static bool isFirstCall = true;
+  if (isFirstCall) {
+      if (logFile.is_open()) {
+          logFile << "max_robot_pose_search_dist_: " << max_robot_pose_search_dist_ << "\n";
+          logFile << "max_costmap_extent: " << max_costmap_extent << "\n\n";
+      }
+      isFirstCall = false;
+  }
+
+  // Log call info
+  if (logFile.is_open()) {
+      static int callCount = 1;
+      logFile << "Call " << callCount << ":\n";
+
+      // Log robot pose
+      logFile << "robot_pose: ("
+              << robot_pose.pose.position.x << ", "
+              << robot_pose.pose.position.y << ")\n";
+
+      // Log iterator positions
+      size_t i = 0;
+      for (auto it = global_plan_.poses.begin(); it != global_plan_.poses.end(); ++it, ++i) {
+          if (it == closest_pose_upper_bound) {
+              logFile << "closest_pose_upper_bound: " << i << ":("
+                      << it->pose.position.x << ", "
+                      << it->pose.position.y << ")\n";
+          }
+          if (it == transformation_begin) {
+              logFile << "transformation_begin: " << i << ":("
+                      << it->pose.position.x << ", "
+                      << it->pose.position.y << ")\n";
+          }
+          if (it == transformation_end) {
+              logFile << "transformation_end: " << i << ":("
+                      << it->pose.position.x << ", "
+                      << it->pose.position.y << ")\n";
+          }
+      }
+
+      // Log global plan before transform
+      logFile << "plan_before_transform: [";
+      i = 0;
+      for (auto it = transformation_begin; it != transformation_end; ++it, ++i) {
+          logFile << i << ":(" << it->pose.position.x << ", "
+                  << it->pose.position.y << ")";
+          if (std::next(it) != transformation_end) {
+              logFile << ", ";
+          }
+      }
+      logFile << "]\n\n";
+
+      // Log transformed plan
+      logFile << "transformed_plan: [";
+      i = 0;
+      for (const auto& pose : transformed_plan.poses) {
+          logFile << i << ":(" << pose.pose.position.x << ", "
+                  << pose.pose.position.y << ")";
+          if (&pose != &transformed_plan.poses.back()) {
+              logFile << ", ";
+          }
+          ++i;
+      }
+      logFile << "]\n\n";
+
+      // // Log global plan before erasing
+      // logFile << "global_plan before erase: [";
+      // for (size_t j = 0; j < global_plan_.poses.size(); ++j) {
+      //     logFile << j << ":(" << global_plan_.poses[j].pose.position.x << ", "
+      //             << global_plan_.poses[j].pose.position.y << ")";
+      //     if (j < global_plan_.poses.size() - 1) {
+      //         logFile << ", ";
+      //     }
+      // }
+      // logFile << "]\n\n";
+
+      // Remove the portion of the global plan that we've already passed
+      global_plan_.poses.erase(begin(global_plan_.poses), transformation_begin);
+
+      // // Log global plan after erasing
+      // logFile << "global_plan after erase: [";
+      // for (size_t j = 0; j < global_plan_.poses.size(); ++j) {
+      //     logFile << j << ":(" << global_plan_.poses[j].pose.position.x << ", "
+      //             << global_plan_.poses[j].pose.position.y << ")";
+      //     if (j < global_plan_.poses.size() - 1) {
+      //         logFile << ", ";
+      //     }
+      // }
+      // logFile << "]\n\n";
+
+      callCount++;
+  }
+  
   global_path_pub_->publish(transformed_plan);
 
   if (transformed_plan.poses.empty()) {
+    if (logFile.is_open()) {
+        logFile << "Exception: Resulting plan has 0 poses in it.\n\n";
+        logFile.close();
+    }
     throw nav2_core::PlannerException("Resulting plan has 0 poses in it.");
   }
 
