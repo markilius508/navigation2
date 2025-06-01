@@ -18,6 +18,7 @@
 #include <string>
 #include <utility>
 #include <limits>
+#include <fstream>
 
 #include "lifecycle_msgs/msg/state.hpp"
 #include "nav2_core/exceptions.hpp"
@@ -26,6 +27,7 @@
 #include "nav2_util/node_utils.hpp"
 #include "nav2_util/geometry_utils.hpp"
 #include "nav2_controller/controller_server.hpp"
+#include "tf2/utils.h"
 
 using namespace std::chrono_literals;
 using rcl_interfaces::msg::ParameterType;
@@ -42,12 +44,16 @@ ControllerServer::ControllerServer(const rclcpp::NodeOptions & options)
   goal_checker_loader_("nav2_core", "nav2_core::GoalChecker"),
   default_goal_checker_ids_{"goal_checker"},
   default_goal_checker_types_{"nav2_controller::SimpleGoalChecker"},
-  lp_loader_("nav2_core", "nav2_core::Controller"),
+  lp_loader_("nav2_core", "nav2_core::Controller"), // initialze lp_loader_ with (package, base_class)
   default_ids_{"FollowPath"},
   default_types_{"dwb_core::DWBLocalPlanner"}
 {
   RCLCPP_INFO(get_logger(), "Creating controller server");
 
+  // see node.hpp and node_impl.hpp for definition and declaration of declare_parameter();
+  // YAML parameters are loaded first.
+  // declare_parameter checks for existing parameters and only sets defaults if none are provided.
+  // Use ignore_override = true to force default values even if YAML values exist.
   declare_parameter("controller_frequency", 20.0);
 
   declare_parameter("progress_checker_plugin", default_progress_checker_id_);
@@ -304,6 +310,8 @@ bool ControllerServer::findControllerId(
   const std::string & c_name,
   std::string & current_controller)
 {
+  // RCLCPP_INFO(get_logger(), "Prawit: %s.", c_name.c_str());
+
   if (controllers_.find(c_name) == controllers_.end()) {
     if (controllers_.size() == 1 && c_name.empty()) {
       RCLCPP_WARN_ONCE(
@@ -378,6 +386,45 @@ void ControllerServer::computeControl()
     }
 
     setPlannerPath(action_server_->get_current_goal()->path);
+
+    // Add debug info about path
+    RCLCPP_INFO(
+        get_logger(),
+        "Received path with %zu poses", 
+        action_server_->get_current_goal()->path.poses.size());
+
+    // Optional: print first and last pose
+    // const auto& path = action_server_->get_current_goal()->path;
+    // if (!path.poses.empty()) {
+    //     RCLCPP_INFO(
+    //         get_logger(),
+    //         "Start pose: (%.2f, %.2f), End pose: (%.2f, %.2f)",
+    //         path.poses.front().pose.position.x, path.poses.front().pose.position.y,
+    //         path.poses.back().pose.position.x, path.poses.back().pose.position.y);
+    // }
+
+    const auto& path = action_server_->get_current_goal()->path;
+    if (!path.poses.empty()) {
+        std::ofstream logFile("/home/markilius/nav2_ws/src/controller_first_path_log.txt", std::ios::app);
+        if (logFile.is_open()) {
+            logFile << "Received path with " << path.poses.size() << " poses:\n";
+            logFile << "[";
+            for (size_t i = 0; i < path.poses.size(); ++i) {
+                const auto& pose = path.poses[i];
+                logFile << i << ":(" << pose.pose.position.x << ", "
+                        << pose.pose.position.y << ")";
+                if (i < path.poses.size() - 1) {
+                    logFile << ", ";
+                }
+            }
+            logFile << "]\n";
+            logFile.close();
+        } else {
+            RCLCPP_ERROR(get_logger(), "Unable to open file for logging!");
+        }
+    }
+    
+
     progress_checker_->reset();
 
     last_valid_cmd_time_ = now();
@@ -465,6 +512,14 @@ void ControllerServer::computeAndPublishVelocity()
   if (!getRobotPose(pose)) {
     throw nav2_core::PlannerException("Failed to obtain robot pose");
   }
+
+    // Add debug info about pose
+  // RCLCPP_INFO(
+  //     get_logger(),
+  //     "Controller Robot pose: x=%.2f, y=%.2f, theta=%.2f",
+  //     pose.pose.position.x,
+  //     pose.pose.position.y,
+  //     tf2::getYaw(pose.pose.orientation));  // Need to convert quaternion to yaw
 
   if (!progress_checker_->check(pose)) {
     throw nav2_core::PlannerException("Failed to make progress");
@@ -556,6 +611,27 @@ void ControllerServer::updateGlobalPath()
       return;
     }
     setPlannerPath(goal->path);
+
+    const auto& path = action_server_->get_current_goal()->path;
+    if (!path.poses.empty()) {
+        std::ofstream logFile("/home/markilius/nav2_ws/src/controller_consecutive_path_log.txt", std::ios::app);
+        if (logFile.is_open()) {
+            logFile << "Received path with " << path.poses.size() << " poses:\n";
+            logFile << "[";
+            for (size_t i = 0; i < path.poses.size(); ++i) {
+                const auto& pose = path.poses[i];
+                logFile << i << ":(" << pose.pose.position.x << ", "
+                        << pose.pose.position.y << ")";
+                if (i < path.poses.size() - 1) {
+                    logFile << ", ";
+                }
+            }
+            logFile << "]\n";
+            logFile.close();
+        } else {
+            RCLCPP_ERROR(get_logger(), "Unable to open file for logging!");
+        }
+    }
   }
 }
 
