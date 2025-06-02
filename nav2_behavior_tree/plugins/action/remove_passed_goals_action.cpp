@@ -15,6 +15,7 @@
 #include <string>
 #include <memory>
 #include <limits>
+#include <fstream>
 
 #include "nav_msgs/msg/path.hpp"
 #include "nav2_util/geometry_utils.hpp"
@@ -42,6 +43,7 @@ RemovePassedGoals::RemovePassedGoals(
 inline BT::NodeStatus RemovePassedGoals::tick()
 {
   setStatus(BT::NodeStatus::RUNNING);
+  static bool first = true;
 
   Goals goal_poses;
   getInput("input_goals", goal_poses);
@@ -62,13 +64,74 @@ inline BT::NodeStatus RemovePassedGoals::tick()
   }
 
   double dist_to_goal;
+  std::ofstream logFile("/home/markilius/nav2_ws/src/goals_removed_log.txt", std::ios::app);
+  
+  if (first) {
+    if (logFile.is_open()) {
+      // Log initial state of goal_poses
+      logFile << "\nThere are " << goal_poses.size() << " poses:\n";
+      logFile << "[";
+      for (size_t i = 0; i < goal_poses.size(); ++i) {
+          const auto& pose = goal_poses[i].pose;
+          logFile << i << ":(" << pose.position.x << ", " << pose.position.y << ")";
+          if (i < goal_poses.size() - 1) {
+              logFile << ", ";
+          }
+      }
+      logFile << "]\n";
+    }
+    first = false;
+  }
+
+  size_t i = 0;
+  bool first_del_point = true;
+  double ref_dx = 0.0;
+  double ref_dy = 0.0;
+  double ref_angle = 0.0;
+
+  double current_dx = 0.0;
+  double current_dy = 0.0;
+  double current_angle = 0.0;
+
+  double angle_diff = 0.0;
+
   while (goal_poses.size() > 1) {
+    ref_dx = goal_poses[1].pose.position.x - goal_poses[0].pose.position.x;
+    ref_dy = goal_poses[1].pose.position.y - goal_poses[0].pose.position.y;
+    ref_angle = std::atan2(ref_dy, ref_dx);
+
+    current_dx = goal_poses[0].pose.position.x - current_pose.pose.position.x;
+    current_dy = goal_poses[0].pose.position.y - current_pose.pose.position.y;
+    current_angle = std::atan2(current_dy, current_dx);
+
+    angle_diff = (std::abs(ref_angle - current_angle) * 180) / M_PI;
+    
     dist_to_goal = euclidean_distance(goal_poses[0].pose, current_pose.pose);
 
-    if (dist_to_goal > viapoint_achieved_radius_) {
-      break;
+    if (angle_diff < 30.0) {
+      if (dist_to_goal > viapoint_achieved_radius_) {
+        break; // do not remove any pose
+      }
+    } else {
+      if (dist_to_goal > 0.3f) {
+        break; // do not remove any pose
+      }
     }
 
+    // Log removal
+    if (logFile.is_open()) {
+      const auto& pose = goal_poses[0].pose;
+      if (first_del_point) {
+        logFile << "\nRemoving poses " << i << ":(" << pose.position.x << ", " << pose.position.y;
+        logFile << ", " << current_pose.pose.position.x << ", " << current_pose.pose.position.y << ", " << angle_diff << ")";
+        first_del_point = false;
+      } else {
+        logFile << ", " << i << ":(" << pose.position.x << ", " << pose.position.y;
+        logFile << ", " << current_pose.pose.position.x << ", " << current_pose.pose.position.y << ", " << angle_diff << ")";
+      }
+    }
+
+    i++;
     goal_poses.erase(goal_poses.begin());
   }
 
