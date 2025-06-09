@@ -47,6 +47,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "action/DummyBehavior.action"
   "action/FollowWaypoints.action"
   "action/FollowGPSWaypoints.action"
+  "action/NavigateThroughGPSPoses.action"
   DEPENDENCIES builtin_interfaces geometry_msgs std_msgs action_msgs nav_msgs geographic_msgs
 )
 
