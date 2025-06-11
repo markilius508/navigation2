@@ -69,7 +69,7 @@ BtNavigator::BtNavigator(rclcpp::NodeOptions options)
     "nav2_goal_updated_controller_bt_node",
     "nav2_is_battery_low_condition_bt_node",
     "nav2_navigate_through_poses_action_bt_node",
-    // "nav2_navigate_through_gps_poses_action_bt_node",
+    "nav2_navigate_through_gps_poses_action_bt_node",
     "nav2_navigate_to_pose_action_bt_node",
     "nav2_remove_passed_goals_action_bt_node",
     "nav2_planner_selector_bt_node",
