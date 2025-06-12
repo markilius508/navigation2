@@ -29,10 +29,13 @@ RemovePassedGoals::RemovePassedGoals(
   const std::string & name,
   const BT::NodeConfiguration & conf)
 : BT::ActionNodeBase(name, conf),
-  viapoint_achieved_radius_(0.5)
+  sharp_turn_(30.0),
+  viapoint_achieved_radius_(0.5),
+  viapoint_achieved_radius_sharp_turn_(0.5)
 {
+  getInput("sharp_turn", sharp_turn_);
   getInput("radius", viapoint_achieved_radius_);
-
+  getInput("radius_sharp_turn", viapoint_achieved_radius_sharp_turn_);
   getInput("global_frame", global_frame_);
   getInput("robot_base_frame", robot_base_frame_);
   tf_ = config().blackboard->get<std::shared_ptr<tf2_ros::Buffer>>("tf_buffer");
@@ -108,12 +111,12 @@ inline BT::NodeStatus RemovePassedGoals::tick()
     
     dist_to_goal = euclidean_distance(goal_poses[0].pose, current_pose.pose);
 
-    if (angle_diff < 30.0) {
+    if (angle_diff < sharp_turn_) {
       if (dist_to_goal > viapoint_achieved_radius_) {
         break; // do not remove any pose
       }
     } else {
-      if (dist_to_goal > 0.3f) {
+      if (dist_to_goal > viapoint_achieved_radius_sharp_turn_) {
         break; // do not remove any pose
       }
     }
