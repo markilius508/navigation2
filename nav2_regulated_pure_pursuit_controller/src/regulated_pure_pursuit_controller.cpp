@@ -200,6 +200,7 @@ void RegulatedPurePursuitController::configure(
   }
 
   global_path_pub_ = node->create_publisher<nav_msgs::msg::Path>("received_global_plan", 1);
+  transformed_path_pub_ = node->create_publisher<nav_msgs::msg::Path>("transformed_global_plan", 1);
   carrot_pub_ = node->create_publisher<geometry_msgs::msg::PointStamped>("lookahead_point", 1);
   carrot_arc_pub_ = node->create_publisher<nav_msgs::msg::Path>("lookahead_collision_arc", 1);
 
@@ -217,6 +218,7 @@ void RegulatedPurePursuitController::cleanup()
     " regulated_pure_pursuit_controller::RegulatedPurePursuitController",
     plugin_name_.c_str());
   global_path_pub_.reset();
+  transformed_path_pub_ .reset();
   carrot_pub_.reset();
   carrot_arc_pub_.reset();
 }
@@ -229,6 +231,7 @@ void RegulatedPurePursuitController::activate()
     "regulated_pure_pursuit_controller::RegulatedPurePursuitController",
     plugin_name_.c_str());
   global_path_pub_->on_activate();
+  transformed_path_pub_ ->on_activate();
   carrot_pub_->on_activate();
   carrot_arc_pub_->on_activate();
   // Add callback for dynamic parameters
@@ -247,6 +250,7 @@ void RegulatedPurePursuitController::deactivate()
     "regulated_pure_pursuit_controller::RegulatedPurePursuitController",
     plugin_name_.c_str());
   global_path_pub_->on_deactivate();
+  transformed_path_pub_ ->on_deactivate();
   carrot_pub_->on_deactivate();
   carrot_arc_pub_->on_deactivate();
   dyn_params_handler_.reset();
@@ -458,7 +462,7 @@ geometry_msgs::msg::PoseStamped RegulatedPurePursuitController::getLookAheadPoin
   // Find the first pose which is at a distance greater than the lookahead distance
   auto goal_pose_it = std::find_if(
     transformed_plan.poses.begin(), transformed_plan.poses.end(), [&](const auto & ps) {
-      return hypot(ps.pose.position.x, ps.pose.position.y) >= lookahead_dist && ps.pose.position.x >= 0;
+      return hypot(ps.pose.position.x, ps.pose.position.y) >= lookahead_dist;
     });
 
   size_t index = std::distance(transformed_plan.poses.begin(), goal_pose_it);
@@ -859,6 +863,9 @@ nav_msgs::msg::Path RegulatedPurePursuitController::transformGlobalPlan(
   transformed_plan.header.frame_id = costmap_ros_->getBaseFrameID();
   transformed_plan.header.stamp = robot_pose.header.stamp;
 
+  // Remove the portion of the global plan that we've already passed so we don't
+  // process it on the next iteration (this is called path pruning)
+  global_plan_.poses.erase(begin(global_plan_.poses), transformation_begin);
   
   
   // Log static values on first call
@@ -937,9 +944,6 @@ nav_msgs::msg::Path RegulatedPurePursuitController::transformGlobalPlan(
       // }
       // logFile << "]\n\n";
 
-      // Remove the portion of the global plan that we've already passed
-      global_plan_.poses.erase(begin(global_plan_.poses), transformation_begin);
-
       // // Log global plan after erasing
       // logFile << "global_plan after erase: [";
       // for (size_t j = 0; j < global_plan_.poses.size(); ++j) {
@@ -954,7 +958,8 @@ nav_msgs::msg::Path RegulatedPurePursuitController::transformGlobalPlan(
       callCount++;
   }
   
-  global_path_pub_->publish(transformed_plan);
+  global_path_pub_->publish(global_plan_);
+  transformed_path_pub_->publish(transformed_plan);
 
   if (transformed_plan.poses.empty()) {
     if (logFile.is_open()) {
