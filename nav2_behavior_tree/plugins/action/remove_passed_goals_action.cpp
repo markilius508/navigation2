@@ -86,7 +86,7 @@ inline BT::NodeStatus RemovePassedGoals::tick()
     first = false;
   }
 
-  size_t i = 0;
+  static size_t i = 0;
   bool first_del_point = true;
   double ref_dx = 0.0;
   double ref_dy = 0.0;
