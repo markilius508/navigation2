@@ -169,7 +169,7 @@ protected:
    * @brief Checks if goal is reached
    * @return true or false
    */
-  bool isGoalReached();
+  bool isGoalReached(const int32_t goal_size);
   /**
    * @brief Obtain current pose of the robot
    * @param pose To store current pose of the robot

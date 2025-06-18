@@ -16,6 +16,7 @@
 #include <string>
 
 #include "nav2_behavior_tree/plugins/action/follow_path_action.hpp"
+#include "rclcpp/rclcpp.hpp"
 
 namespace nav2_behavior_tree
 {
@@ -30,9 +31,12 @@ FollowPathAction::FollowPathAction(
 
 void FollowPathAction::on_tick()
 {
+  Goals goals;
   getInput("path", goal_.path);
   getInput("controller_id", goal_.controller_id);
   getInput("goal_checker_id", goal_.goal_checker_id);
+  getInput("goals", goals);
+  goal_.goal_size = static_cast<int32_t>(goals.size());
 }
 
 void FollowPathAction::on_wait_for_result(
@@ -62,6 +66,15 @@ void FollowPathAction::on_wait_for_result(
 
   if (goal_.goal_checker_id != new_goal_checker_id) {
     goal_.goal_checker_id = new_goal_checker_id;
+    goal_updated_ = true;
+  }
+
+  // ADD THIS: Update goal_size when goals change
+  Goals new_goals;
+  getInput("goals", new_goals);
+  
+  if (goal_.goal_size != static_cast<int32_t>(new_goals.size())) {
+    goal_.goal_size = new_goals.size();
     goal_updated_ = true;
   }
 }

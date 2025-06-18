@@ -65,7 +65,7 @@ void PositionGoalChecker::reset()
 
 bool PositionGoalChecker::isGoalReached(
   const geometry_msgs::msg::Pose & query_pose, const geometry_msgs::msg::Pose & goal_pose,
-  const geometry_msgs::msg::Twist &)
+  const geometry_msgs::msg::Twist &, const int32_t goal_size)
 {
   // If stateful and position was already reached, maintain state
   if (stateful_ && position_reached_) {
@@ -76,7 +76,7 @@ bool PositionGoalChecker::isGoalReached(
   double dx = query_pose.position.x - goal_pose.position.x;
   double dy = query_pose.position.y - goal_pose.position.y;
 
-  bool position_reached = (dx * dx + dy * dy <= xy_goal_tolerance_sq_);
+  bool position_reached = (dx * dx + dy * dy <= xy_goal_tolerance_sq_) && (goal_size < 2);
 
   // If stateful, remember that we reached the position
   if (stateful_ && position_reached) {

@@ -85,7 +85,7 @@ public:
    */
   virtual bool isGoalReached(
     const geometry_msgs::msg::Pose & query_pose, const geometry_msgs::msg::Pose & goal_pose,
-    const geometry_msgs::msg::Twist & velocity) = 0;
+    const geometry_msgs::msg::Twist & velocity, const int32_t goal_size) = 0;
 
   /**
    * @brief Get the maximum possible tolerances used for goal checking in the major types.

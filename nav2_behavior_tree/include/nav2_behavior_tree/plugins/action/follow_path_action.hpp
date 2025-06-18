@@ -36,6 +36,8 @@ public:
    * @param action_name Action name this node creates a client for
    * @param conf BT node configuration
    */
+  typedef std::vector<geometry_msgs::msg::PoseStamped> Goals;
+  
   FollowPathAction(
     const std::string & xml_tag_name,
     const std::string & action_name,
@@ -65,6 +67,7 @@ public:
         BT::InputPort<nav_msgs::msg::Path>("path", "Path to follow"),
         BT::InputPort<std::string>("controller_id", ""),
         BT::InputPort<std::string>("goal_checker_id", ""),
+        BT::InputPort<Goals>("goals", "Original goals to navigate through"),
       });
   }
 };

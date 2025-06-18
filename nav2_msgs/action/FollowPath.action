@@ -2,6 +2,7 @@
 nav_msgs/Path path
 string controller_id
 string goal_checker_id
+int32 goal_size
 ---
 #result definition
 std_msgs/Empty result

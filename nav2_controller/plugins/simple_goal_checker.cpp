@@ -97,12 +97,12 @@ void SimpleGoalChecker::reset()
 
 bool SimpleGoalChecker::isGoalReached(
   const geometry_msgs::msg::Pose & query_pose, const geometry_msgs::msg::Pose & goal_pose,
-  const geometry_msgs::msg::Twist &)
+  const geometry_msgs::msg::Twist &, const int32_t goal_size)
 {
   if (check_xy_) {
     double dx = query_pose.position.x - goal_pose.position.x,
       dy = query_pose.position.y - goal_pose.position.y;
-    if (dx * dx + dy * dy > xy_goal_tolerance_sq_) {
+    if (dx * dx + dy * dy > xy_goal_tolerance_sq_ || goal_size >= 2) {
       return false;
     }
     // We are within the window

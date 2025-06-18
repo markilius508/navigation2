@@ -452,7 +452,8 @@ void ControllerServer::computeControl()
 
       computeAndPublishVelocity();
 
-      if (isGoalReached()) {
+      int32_t goal_size = action_server_->get_current_goal()->goal_size;
+      if (isGoalReached(goal_size)) {
         RCLCPP_INFO(get_logger(), "Reached the goal!");
         break;
       }
@@ -657,7 +658,7 @@ void ControllerServer::publishZeroVelocity()
   publishVelocity(velocity);
 }
 
-bool ControllerServer::isGoalReached()
+bool ControllerServer::isGoalReached(const int32_t goal_size)
 {
   geometry_msgs::msg::PoseStamped pose;
 
@@ -676,7 +677,7 @@ bool ControllerServer::isGoalReached()
 
   return goal_checkers_[current_goal_checker_]->isGoalReached(
     pose.pose, transformed_end_pose.pose,
-    velocity);
+    velocity, goal_size);
 }
 
 bool ControllerServer::getRobotPose(geometry_msgs::msg::PoseStamped & pose)

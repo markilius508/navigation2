@@ -176,7 +176,8 @@ geometry_msgs::msg::TwistStamped RotationShimController::computeVelocityCommands
       goal_checker->getTolerances(pose_tolerance, vel_tolerance);
       position_goal_checker_->setXYGoalTolerance(pose_tolerance.position.x);
 
-      if (position_goal_checker_->isGoalReached(pose.pose, sampled_pt_goal.pose, velocity)) {
+      int32_t goal_size = 2;
+      if (position_goal_checker_->isGoalReached(pose.pose, sampled_pt_goal.pose, velocity, goal_size)) {
         double pose_yaw = tf2::getYaw(pose.pose.orientation);
         double goal_yaw = tf2::getYaw(sampled_pt_goal.pose.orientation);
 
