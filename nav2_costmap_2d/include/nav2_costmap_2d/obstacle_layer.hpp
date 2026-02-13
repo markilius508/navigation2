@@ -250,6 +250,8 @@ protected:
   std::vector<nav2_costmap_2d::Observation> static_clearing_observations_;
   std::vector<nav2_costmap_2d::Observation> static_marking_observations_;
 
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr debug_cloud_pub_;
+
   bool rolling_window_;
   bool was_reset_;
   int combination_method_;

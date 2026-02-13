@@ -103,6 +103,11 @@ void ObstacleLayer::onInitialize()
       this,
       std::placeholders::_1));
 
+  auto custom_qos = rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable();
+
+  debug_cloud_pub_ = node->create_publisher<sensor_msgs::msg::PointCloud2>("debug_received_cloud", custom_qos);
+  // debug_cloud_pub_->on_activate();
+
   RCLCPP_INFO(
     logger_,
     "Subscribed to Topics: %s", topics_string.c_str());
@@ -219,7 +224,8 @@ void ObstacleLayer::onInitialize()
       global_frame_.c_str(), expected_update_rate, observation_keep_time);
 
     rmw_qos_profile_t custom_qos_profile = rmw_qos_profile_sensor_data;
-    custom_qos_profile.depth = 50;
+    custom_qos_profile.depth = 10;
+    custom_qos_profile.reliability = RMW_QOS_POLICY_RELIABILITY_RELIABLE;
 
     // create a callback for the topic
     if (data_type == "LaserScan") {
@@ -409,6 +415,8 @@ ObstacleLayer::pointCloud2Callback(
   buffer->lock();
   buffer->bufferCloud(*message);
   buffer->unlock();
+
+  debug_cloud_pub_->publish(*message);
 }
 
 void
