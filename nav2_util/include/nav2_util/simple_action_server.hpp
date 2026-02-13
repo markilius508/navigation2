@@ -183,7 +183,7 @@ public:
       debug_msg("An older goal is active, moving the new goal to a pending slot.");
 
       if (is_active(pending_handle_)) {
-        debug_msg(
+        warn_msg(
           "The pending slot is occupied."
           " The previous pending goal will be terminated and replaced.");
         terminate(pending_handle_);
@@ -193,7 +193,7 @@ public:
     } else {
       if (is_active(pending_handle_)) {
         // Shouldn't reach a state with a pending goal but no current one.
-        error_msg("Forgot to handle a preemption. Terminating the pending goal.");
+        warn_msg("Forgot to handle a preemption. Terminating the pending goal.");
         terminate(pending_handle_);
         preempt_requested_ = false;
       }
@@ -371,7 +371,7 @@ public:
     terminate(pending_handle_);
     preempt_requested_ = false;
 
-    debug_msg("Pending goal terminated");
+    warn_msg("Pending goal terminated");
   }
 
   /**
@@ -449,6 +449,7 @@ public:
     std::make_shared<typename ActionT::Result>())
   {
     std::lock_guard<std::recursive_mutex> lock(update_mutex_);
+    warn_msg("Terminate all pending and active actions");
     terminate(current_handle_, result);
     terminate(pending_handle_, result);
     preempt_requested_ = false;
@@ -463,6 +464,7 @@ public:
     std::make_shared<typename ActionT::Result>())
   {
     std::lock_guard<std::recursive_mutex> lock(update_mutex_);
+    warn_msg("Terminate the active actio");
     terminate(current_handle_, result);
   }
 
