@@ -82,6 +82,7 @@ void SimpleGoalChecker::initialize(
   node->get_parameter(plugin_name + ".xy_goal_tolerance", xy_goal_tolerance_);
   node->get_parameter(plugin_name + ".yaw_goal_tolerance", yaw_goal_tolerance_);
   node->get_parameter(plugin_name + ".stateful", stateful_);
+  logger_ = node->get_logger();
 
   xy_goal_tolerance_sq_ = xy_goal_tolerance_ * xy_goal_tolerance_;
 
