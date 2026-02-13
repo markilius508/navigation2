@@ -223,6 +223,8 @@ protected:
   rcl_interfaces::msg::SetParametersResult
   dynamicParametersCallback(std::vector<rclcpp::Parameter> parameters);
 
+  void callRemovePose(uint32_t index_to_remove);
+
   // Dynamic parameters handler
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr dyn_params_handler_;
   std::mutex dynamic_params_lock_;
@@ -236,6 +238,9 @@ protected:
   std::vector<std::string> planner_types_;
   double max_planner_duration_;
   std::string planner_ids_concat_;
+  double remove_pose_max_distance_;
+  double max_planning_distance_;
+  bool use_backup_planner_;
 
   // TF buffer
   std::shared_ptr<tf2_ros::Buffer> tf_;

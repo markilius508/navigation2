@@ -23,6 +23,7 @@
 #include <string>
 #include <vector>
 #include <utility>
+#include <fstream>
 
 #include "builtin_interfaces/msg/duration.hpp"
 #include "lifecycle_msgs/msg/state.hpp"
@@ -30,6 +31,7 @@
 #include "nav2_util/node_utils.hpp"
 #include "nav2_util/geometry_utils.hpp"
 #include "nav2_costmap_2d/cost_values.hpp"
+#include "nav2_util/file_logger.hpp"
 
 #include "nav2_planner/planner_server.hpp"
 
@@ -45,6 +47,8 @@ PlannerServer::PlannerServer(const rclcpp::NodeOptions & options)
   gp_loader_("nav2_core", "nav2_core::GlobalPlanner"),
   default_ids_{"GridBased"},
   default_types_{"nav2_navfn_planner/NavfnPlanner"},
+  remove_pose_max_distance_{2.0},
+  max_planning_distance_{5.0},
   costmap_(nullptr)
 {
   RCLCPP_INFO(get_logger(), "Creating");
@@ -52,6 +56,9 @@ PlannerServer::PlannerServer(const rclcpp::NodeOptions & options)
   // Declare this node's parameters
   declare_parameter("planner_plugins", default_ids_);
   declare_parameter("expected_planner_frequency", 1.0);
+  declare_parameter("remove_pose_max_distance", 2.0);
+  declare_parameter("max_planning_distance", 5.0);
+  declare_parameter("use_backup_planner", false);
 
   get_parameter("planner_plugins", planner_ids_);
   if (planner_ids_ == default_ids_) {
@@ -125,6 +132,10 @@ PlannerServer::on_configure(const rclcpp_lifecycle::State & /*state*/)
 
   double expected_planner_frequency;
   get_parameter("expected_planner_frequency", expected_planner_frequency);
+  get_parameter("remove_pose_max_distant", remove_pose_max_distance_);
+  get_parameter("max_planning_distance", max_planning_distance_);
+  get_parameter("use_backup_planner", use_backup_planner_);
+
   if (expected_planner_frequency > 0) {
     max_planner_duration_ = 1 / expected_planner_frequency;
   } else {
@@ -332,17 +343,17 @@ bool PlannerServer::transformPosesToGlobalFrame(
 
 template<typename T>
 bool PlannerServer::validatePath(
-  std::unique_ptr<nav2_util::SimpleActionServer<T>> & action_server,
+  [[maybe_unused]] std::unique_ptr<nav2_util::SimpleActionServer<T>> & action_server,
   const geometry_msgs::msg::PoseStamped & goal,
   const nav_msgs::msg::Path & path,
   const std::string & planner_id)
 {
   if (path.poses.size() == 0) {
-    RCLCPP_WARN(
+    RCLCPP_DEBUG(
       get_logger(), "Planning algorithm %s failed to generate a valid"
       " path to (%.2f, %.2f)", planner_id.c_str(),
       goal.pose.position.x, goal.pose.position.y);
-    action_server->terminate_current();
+    // action_server->terminate_current();
     return false;
   }
 
@@ -359,6 +370,7 @@ void
 PlannerServer::computePlanThroughPoses()
 {
   std::lock_guard<std::mutex> lock(dynamic_params_lock_);
+  static nav2_util::FileLogger file_logger; 
 
   auto start_time = this->now();
 
@@ -390,10 +402,12 @@ PlannerServer::computePlanThroughPoses()
     }
 
     // Get consecutive paths through these points
-    geometry_msgs::msg::PoseStamped curr_start, curr_goal;
-    for (unsigned int i = 0; i != goal->goals.size(); i++) {
-      // Get starting point
-      if (i == 0) {
+    geometry_msgs::msg::PoseStamped curr_start, curr_goal, robot_pose;
+    double integrated_dist = 0.0;
+    double valid_path_dist = 0.0;
+
+    for (uint32_t i = 0; i != goal->goals.size(); i++) {
+      if (concat_path.poses.empty()) {
         curr_start = start;
       } else {
         // pick the end of the last planning task as the start for the next one
@@ -403,6 +417,10 @@ PlannerServer::computePlanThroughPoses()
       }
       curr_goal = goal->goals[i];
 
+      if (i > 1) {
+        integrated_dist = integrated_dist + nav2_util::geometry_utils::euclidean_distance(goal->goals[i], goal->goals[i-1]);
+      }
+
       // Transform them into the global frame
       if (!transformPosesToGlobalFrame(action_server_poses_, curr_start, curr_goal)) {
         return;
@@ -411,15 +429,37 @@ PlannerServer::computePlanThroughPoses()
       // Get plan from start -> goal
       nav_msgs::msg::Path curr_path = getPlan(curr_start, curr_goal, goal->planner_id);
 
+      // Main_Planner failed, try the Backup_Planner
+      if (use_backup_planner_) {
+        if (!validatePath(action_server_poses_, curr_goal, curr_path, goal->planner_id)) {
+          curr_path = getPlan(curr_start, curr_goal, "Backup");
+        }
+      }
+
       // check path for validity
       if (!validatePath(action_server_poses_, curr_goal, curr_path, goal->planner_id)) {
-        return;
+        if (integrated_dist < remove_pose_max_distance_) {
+          result->invalid_index.push_back(static_cast<uint32_t>(i));         
+        }
+        continue;
       }
 
       // Concatenate paths together
       concat_path.poses.insert(
         concat_path.poses.end(), curr_path.poses.begin(), curr_path.poses.end());
       concat_path.header = curr_path.header;
+
+      if (i > 1) {
+        valid_path_dist = valid_path_dist + nav2_util::geometry_utils::euclidean_distance(goal->goals[i], goal->goals[i-1]);
+      }
+
+      if (valid_path_dist > max_planning_distance_) {
+        break;
+      }
+    }
+
+    if (!result->invalid_index.empty()) {
+      file_logger.logInvalidPoses(result->invalid_index, "invalidPoses.txt");
     }
 
     // Publish the plan for visualization purposes
@@ -430,7 +470,7 @@ PlannerServer::computePlanThroughPoses()
     result->planning_time = cycle_duration;
 
     if (max_planner_duration_ && cycle_duration.seconds() > max_planner_duration_) {
-      RCLCPP_WARN(
+      RCLCPP_DEBUG(
         get_logger(),
         "Planner loop missed its desired rate of %.4f Hz. Current loop rate is %.4f Hz",
         1 / max_planner_duration_, 1 / cycle_duration.seconds());

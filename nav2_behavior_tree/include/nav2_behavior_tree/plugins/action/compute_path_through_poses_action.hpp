@@ -33,6 +33,7 @@ class ComputePathThroughPosesAction
   : public BtActionNode<nav2_msgs::action::ComputePathThroughPoses>
 {
 public:
+  typedef std::vector<geometry_msgs::msg::PoseStamped> Goals;
   /**
    * @brief A constructor for nav2_behavior_tree::ComputePathThroughPosesAction
    * @param xml_tag_name Name for the XML tag for this node
@@ -73,8 +74,11 @@ public:
     return providedBasicPorts(
       {
         BT::OutputPort<nav_msgs::msg::Path>("path", "Path created by ComputePathThroughPoses node"),
-        BT::InputPort<std::vector<geometry_msgs::msg::PoseStamped>>(
-          "goals",
+        BT::OutputPort<Goals>(
+          "output_goals",
+          "Destinations to plan through"),
+        BT::InputPort<Goals>(
+          "input_goals",
           "Destinations to plan through"),
         BT::InputPort<geometry_msgs::msg::PoseStamped>(
           "start", "Start pose of the path if overriding current robot pose"),

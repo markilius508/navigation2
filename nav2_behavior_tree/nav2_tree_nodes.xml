@@ -80,12 +80,13 @@
     </Action>
 
     <Action ID="ComputePathThroughPoses">
-      <input_port name="goals">Destinations to plan through</input_port>
+      <input_port name="input_goals">Destinations to plan through</input_port>
       <input_port name="start">Start pose of the path if overriding current robot pose</input_port>
       <input_port name="server_name">Server name</input_port>
       <input_port name="server_timeout">Server timeout</input_port>
       <input_port name="planner_id">Mapped name to the planner plugin type to use</input_port>
       <output_port name="path">Path created by ComputePathToPose node</output_port>
+      <output_port name="output_goals">Destinations to plan through after removing invalid poses</output_port>
     </Action>
 
     <Action ID="RemovePassedGoals">
