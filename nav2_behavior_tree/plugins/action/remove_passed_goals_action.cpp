@@ -19,6 +19,7 @@
 
 #include "nav_msgs/msg/path.hpp"
 #include "nav2_util/geometry_utils.hpp"
+#include "nav2_util/file_logger.hpp"
 
 #include "nav2_behavior_tree/plugins/action/remove_passed_goals_action.hpp"
 
@@ -38,6 +39,9 @@ RemovePassedGoals::RemovePassedGoals(
   getInput("radius_sharp_turn", viapoint_achieved_radius_sharp_turn_);
   getInput("global_frame", global_frame_);
   getInput("robot_base_frame", robot_base_frame_);
+  getInput("timeout_threshold", timeout_threshold_);
+  getInput("start_timeout_radius", start_timeout_radius_);
+
   tf_ = config().blackboard->get<std::shared_ptr<tf2_ros::Buffer>>("tf_buffer");
   auto node = config().blackboard->get<rclcpp::Node::SharedPtr>("node");
   node->get_parameter("transform_tolerance", transform_tolerance_);
@@ -47,6 +51,8 @@ inline BT::NodeStatus RemovePassedGoals::tick()
 {
   setStatus(BT::NodeStatus::RUNNING);
   static bool first = true;
+  // Static instance to maintain state across ticks
+  static nav2_util::FileLogger file_logger; 
 
   Goals goal_poses;
   getInput("input_goals", goal_poses);
@@ -66,50 +72,60 @@ inline BT::NodeStatus RemovePassedGoals::tick()
     return BT::NodeStatus::FAILURE;
   }
 
-  double dist_to_goal;
-  std::ofstream logFile("/home/markilius/nav2_ws/src/goals_removed_log.txt", std::ios::app);
-  
+  // --- 1. Log Initial State (Internalized loop in Logger) ---
   if (first) {
-    if (logFile.is_open()) {
-      // Log initial state of goal_poses
-      logFile << "\nThere are " << goal_poses.size() << " poses:\n";
-      logFile << "[";
-      for (size_t i = 0; i < goal_poses.size(); ++i) {
-          const auto& pose = goal_poses[i].pose;
-          logFile << i << ":(" << pose.position.x << ", " << pose.position.y << ")";
-          if (i < goal_poses.size() - 1) {
-              logFile << ", ";
-          }
-      }
-      logFile << "]\n";
-    }
+    file_logger.logInitialState(goal_poses, "goals_removed_log.txt");
     first = false;
   }
 
+  auto node = config().blackboard->get<rclcpp::Node::SharedPtr>("node");
+  rclcpp::Time now = node->now();
+  
+  // --- 2. Timeout Logic ---
+  if (timeout_threshold_ > 0.0 && goal_poses.size() > 1) {
+    double dist_to_first = nav2_util::geometry_utils::euclidean_distance(
+      goal_poses[0].pose, current_pose.pose);
+
+    if (dist_to_first < start_timeout_radius_) {
+      if (!timer_active_) {
+        start_time_ = now;
+        timer_active_ = true;
+      } else {
+        double elapsed = (now - start_time_).seconds();
+        if (elapsed > timeout_threshold_) {
+          // Log the timeout event to file via the new class
+          file_logger.logTimeoutRemoval(goal_poses[0].pose, elapsed, "goals_removed_log.txt");
+
+          RCLCPP_WARN(logger_, "Goal timeout! Removing pose (%.2f, %.2f)", 
+                      goal_poses[0].pose.position.x, goal_poses[0].pose.position.y);
+          
+          goal_poses.erase(goal_poses.begin());
+          timer_active_ = false; 
+          setOutput("output_goals", goal_poses);
+          return BT::NodeStatus::SUCCESS;
+          }
+      }
+    } else {
+      // Robot moved out of radius
+      timer_active_ = false;
+    }
+  }
+
+  // --- 3. Proximity/Angle Removal Loop ---
   static size_t i = 0;
   bool first_del_point = true;
-  double ref_dx = 0.0;
-  double ref_dy = 0.0;
-  double ref_angle = 0.0;
-
-  double current_dx = 0.0;
-  double current_dy = 0.0;
-  double current_angle = 0.0;
-
-  double angle_diff = 0.0;
 
   while (goal_poses.size() > 1) {
-    ref_dx = goal_poses[1].pose.position.x - goal_poses[0].pose.position.x;
-    ref_dy = goal_poses[1].pose.position.y - goal_poses[0].pose.position.y;
-    ref_angle = std::atan2(ref_dy, ref_dx);
+    double ref_dx = goal_poses[1].pose.position.x - goal_poses[0].pose.position.x;
+    double ref_dy = goal_poses[1].pose.position.y - goal_poses[0].pose.position.y;
+    double ref_angle = std::atan2(ref_dy, ref_dx);
 
-    current_dx = goal_poses[0].pose.position.x - current_pose.pose.position.x;
-    current_dy = goal_poses[0].pose.position.y - current_pose.pose.position.y;
-    current_angle = std::atan2(current_dy, current_dx);
+    double current_dx = goal_poses[0].pose.position.x - current_pose.pose.position.x;
+    double current_dy = goal_poses[0].pose.position.y - current_pose.pose.position.y;
+    double current_angle = std::atan2(current_dy, current_dx);
 
-    angle_diff = (std::abs(ref_angle - current_angle) * 180) / M_PI;
-    
-    dist_to_goal = euclidean_distance(goal_poses[0].pose, current_pose.pose);
+    double angle_diff = (std::abs(ref_angle - current_angle) * 180) / M_PI;
+    double dist_to_goal = euclidean_distance(goal_poses[0].pose, current_pose.pose);
 
     if (angle_diff < sharp_turn_) {
       if (dist_to_goal > viapoint_achieved_radius_) {
@@ -121,25 +137,16 @@ inline BT::NodeStatus RemovePassedGoals::tick()
       }
     }
 
-    // Log removal
-    if (logFile.is_open()) {
-      const auto& pose = goal_poses[0].pose;
-      if (first_del_point) {
-        logFile << "\nRemoving poses " << i << ":(" << pose.position.x << ", " << pose.position.y;
-        logFile << ", " << current_pose.pose.position.x << ", " << current_pose.pose.position.y << ", " << angle_diff << ")";
-        first_del_point = false;
-      } else {
-        logFile << ", " << i << ":(" << pose.position.x << ", " << pose.position.y;
-        logFile << ", " << current_pose.pose.position.x << ", " << current_pose.pose.position.y << ", " << angle_diff << ")";
-      }
-    }
+    // Log the removal using the utility class
+    file_logger.logRemovalEvent(i, goal_poses[0].pose, current_pose.pose, angle_diff, first_del_point, "goals_removed_log.txt");
 
     i++;
+    first_del_point = false;
     goal_poses.erase(goal_poses.begin());
+    timer_active_ = false;
   }
 
   setOutput("output_goals", goal_poses);
-
   return BT::NodeStatus::SUCCESS;
 }
 

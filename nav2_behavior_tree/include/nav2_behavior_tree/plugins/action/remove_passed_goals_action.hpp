@@ -18,6 +18,7 @@
 #include <vector>
 #include <memory>
 #include <string>
+#include <cstdint>
 
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "nav2_util/geometry_utils.hpp"
@@ -47,6 +48,8 @@ public:
       BT::InputPort<double>("radius_sharp_turn", 0.5, "radius to goal for it to be considered for removal when the robot is facing sharp turn"),
       BT::InputPort<std::string>("global_frame", std::string("map"), "Global frame"),
       BT::InputPort<std::string>("robot_base_frame", std::string("base_link"), "Robot base frame"),
+      BT::InputPort<double>("timeout_threshold", 10.0, "Time in seconds before skipping goal"),
+      BT::InputPort<double>("start_timeout_radius", 2.0, "Radius to begin the timeout countdown"),
     };
   }
 
@@ -60,6 +63,11 @@ private:
   std::string robot_base_frame_, global_frame_;
   double transform_tolerance_;
   std::shared_ptr<tf2_ros::Buffer> tf_;
+  double timeout_threshold_;      // ROS Parameter: Max time allowed
+  double start_timeout_radius_;   // ROS Parameter: Radius to start timer
+  rclcpp::Time start_time_;       // Time when the robot entered the radius
+  bool timer_active_ = false;     // Flag to track if the timer is running
+  rclcpp::Logger logger_{rclcpp::get_logger("RemovePassedGoals")};
 };
 
 }  // namespace nav2_behavior_tree
