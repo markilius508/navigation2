@@ -307,6 +307,10 @@ protected:
   bool allow_reversing_;
   double max_robot_pose_search_dist_;
   bool use_interpolation_;
+  bool is_rotating_to_goal_;
+  rclcpp::Time start_rotation_time_;
+  double end_orientation_rotation_time_;
+  // double collision_carrot_add_;
 
   nav_msgs::msg::Path global_plan_;
   std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>> global_path_pub_;
