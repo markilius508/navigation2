@@ -7,15 +7,16 @@
   <BehaviorTree ID="MainTree">
     <RecoveryNode number_of_retries="6" name="NavigateRecovery">
       <PipelineSequence name="NavigateWithReplanning">
-        <RateController hz="0.5">
-          <RecoveryNode number_of_retries="1" name="ComputePathThroughPoses">
-            <ComputePathThroughPoses goals="{goals}" path="{path}" planner_id="GridBased"/>
+        <RateController hz="1.0">
+          <ComputePathThroughPoses input_goals="{goals}" output_goals="{goals}" path="{path}" planner_id="Main"/>
+          <!-- <RecoveryNode number_of_retries="1" name="ComputePathThroughPoses">
+            <ComputePathThroughPoses input_goals="{goals}" output_goals="{goals}" path="{path}" planner_id="GridBased"/>
             <ClearEntireCostmap name="ClearGlobalCostmap-Context" service_name="global_costmap/clear_entirely_global_costmap"/>
-          </RecoveryNode>
+          </RecoveryNode> -->
         </RateController>
         <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" sharp_turn="30.0" radius="0.5" radius_sharp_turn="0.3"/>
         <RecoveryNode number_of_retries="1" name="FollowPath">
-          <FollowPath path="{path}" controller_id="FollowPath" goals="{goals}"/>
+          <FollowPath path="{path}" goals="{goals}"/>
           <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>
         </RecoveryNode>
       </PipelineSequence>
@@ -26,7 +27,7 @@
             <ClearEntireCostmap name="ClearLocalCostmap-Subtree" service_name="local_costmap/clear_entirely_local_costmap"/>
             <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
           </Sequence>
-          <Spin spin_dist="1.57"/>
+          <!-- <Spin spin_dist="1.57"/> -->
           <Wait wait_duration="5"/>
           <BackUp backup_dist="0.30" backup_speed="0.05"/>
         </RoundRobin>

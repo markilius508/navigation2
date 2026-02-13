@@ -132,6 +132,7 @@ protected:
    * @return bool Whether it found a valid controller to use
    */
   bool findControllerId(const std::string & c_name, std::string & name);
+  bool dynamicController(const std::string & c_name);
 
   /**
    * @brief Find the valid goal checker ID name for the specified parameter
@@ -176,6 +177,7 @@ protected:
    * @return true if able to obtain current pose of the robot, else false
    */
   bool getRobotPose(geometry_msgs::msg::PoseStamped & pose);
+  void getZeroVelocity(geometry_msgs::msg::TwistStamped & velocity);
 
   /**
    * @brief get the thresholded velocity
@@ -202,6 +204,14 @@ protected:
     return twist_thresh;
   }
 
+  bool isCollisionImminent(
+    const double &, const double &);
+
+  bool inCollision(
+  const double & x,
+  const double & y,
+  const double & theta);
+
   /**
    * @brief Callback executed when a parameter change is detected
    * @param event ParameterEvent message
@@ -216,6 +226,7 @@ protected:
   // The controller needs a costmap node
   std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros_;
   std::unique_ptr<nav2_util::NodeThread> costmap_thread_;
+  // nav2_costmap_2d::Costmap2D * costmap_;
 
   // Publishers and subscribers
   std::unique_ptr<nav_2d_utils::OdomSubscriber> odom_sub_;
@@ -246,7 +257,8 @@ protected:
   std::vector<std::string> default_types_;
   std::vector<std::string> controller_ids_;
   std::vector<std::string> controller_types_;
-  std::string controller_ids_concat_, current_controller_;
+  std::string controller_ids_concat_, current_controller_{"FollowPath"};
+  bool dynamic_controller_{true};
 
   double controller_frequency_;
   double min_x_velocity_threshold_;
@@ -254,15 +266,20 @@ protected:
   double min_theta_velocity_threshold_;
 
   double failure_tolerance_;
-
+  double end_pose_tolerance_;
+  
   // Whether we've published the single controller warning yet
   geometry_msgs::msg::PoseStamped end_pose_;
+  geometry_msgs::msg::PoseStamped old_end_pose_;
 
   // Last time the controller generated a valid command
   rclcpp::Time last_valid_cmd_time_;
 
   // Current path container
   nav_msgs::msg::Path current_path_;
+  rclcpp::Time collision_time_;
+  int follow_path_success_count_{0};
+  int primary_controller_stabilizing_counter_;
 
 private:
   /**
