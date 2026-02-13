@@ -202,6 +202,9 @@ protected:
   rclcpp::Duration transform_tolerance_{0, 0};
   bool shorten_transformed_plan_;
   double forward_prune_distance_;
+  double max_angle_change_;
+  double max_next_angle_change_;
+  int min_refpoint_dist_;
 
   /**
    * @brief try to resolve a possibly shortened critic name with the default namespaces and the suffix "Critic"

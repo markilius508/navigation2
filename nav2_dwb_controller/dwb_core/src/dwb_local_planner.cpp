@@ -54,6 +54,7 @@
  #include "pluginlib/class_list_macros.hpp"
  #include "nav_msgs/msg/path.hpp"
  #include "geometry_msgs/msg/twist_stamped.hpp"
+ #include "nav2_util/file_logger.hpp"
  
  using nav2_util::declare_parameter_if_not_declared;
  using nav2_util::geometry_utils::euclidean_distance;
@@ -110,6 +111,15 @@
    declare_parameter_if_not_declared(
      node, dwb_plugin_name_ + ".short_circuit_trajectory_evaluation",
      rclcpp::ParameterValue(true));
+   declare_parameter_if_not_declared(
+     node, dwb_plugin_name_ + ".max_angle_change",
+     rclcpp::ParameterValue(40.0));
+   declare_parameter_if_not_declared(
+     node, dwb_plugin_name_ + ".max_next_angle_change",
+     rclcpp::ParameterValue(100.0));
+   declare_parameter_if_not_declared(
+     node, dwb_plugin_name_ + ".min_refpoint_dist",
+     rclcpp::ParameterValue(1));
  
    std::string traj_generator_name;
  
@@ -127,7 +137,10 @@
      dwb_plugin_name_ + ".short_circuit_trajectory_evaluation",
      short_circuit_trajectory_evaluation_);
    node->get_parameter(dwb_plugin_name_ + ".shorten_transformed_plan", shorten_transformed_plan_);
- 
+   node->get_parameter(dwb_plugin_name_ + ".max_angle_change", max_angle_change_);
+   node->get_parameter(dwb_plugin_name_ + ".max_next_angle_change", max_next_angle_change_);
+   node->get_parameter(dwb_plugin_name_ + ".min_refpoint_dist", min_refpoint_dist_);
+   
    pub_ = std::make_unique<DWBPublisher>(node, dwb_plugin_name_);
    pub_->on_configure();
  
@@ -447,8 +460,7 @@
    const nav_2d_msgs::msg::Pose2DStamped & pose)
  {
    // Log file for debugging
-   std::ofstream logFile("/home/markilius/nav2_ws/src/transformGlobalPlan_dwb.txt", std::ios::app);
-   static bool isFirstCall = true;
+   static nav2_util::FileLogger file_logger;
  
    if (global_plan_.poses.empty()) {
      throw nav2_core::PlannerException("Received plan with zero length");
@@ -499,14 +511,6 @@
    auto prune_point = nav2_util::geometry_utils::first_after_integrated_distance(
      global_plan_.poses.begin(), global_plan_.poses.end(), prune_dist);
  
-   if (isFirstCall) {
-     if (logFile.is_open()) {
-         logFile << "prune_plan_: " << prune_plan_ << "\n";
-         logFile << "transform_start_threshold: " << transform_start_threshold << "\n";
-         logFile << "transform_end_threshold: " << transform_end_threshold << "\n\n";
-     }
-     isFirstCall = false;
-   }
  
    // Find the first pose in the plan (upto prune_point) that's less than transform_start_threshold
    // from the robot.
@@ -539,168 +543,90 @@
      transformation_begin, global_plan_.poses.end(), transform_end_threshold);
  
    // NEW CODE: Find sharp turns in the path and limit the planning horizon
-   const double MAX_ANGLE_CHANGE = 40.0;
-   const double MAX_NEXT_ANGLE_CHANGE = 100.0; 
    auto angle_limited_end = transformation_end;
- 
-   static int callCount = 1;
- 
-   // Log call info
-   if (logFile.is_open()) {
-     logFile << "Call " << callCount << ":\n";
- 
-     // Log robot pose
-     logFile << "robot_pose: ("
-             << robot_pose.pose.x << ", "
-             << robot_pose.pose.y << ")\n";
- 
-     // Log iterator positions
-     size_t i = 0;
-     for (auto it = global_plan_.poses.begin(); it != global_plan_.poses.end(); ++it, ++i) {
-         if (it == prune_point) {
-             logFile << "prune_point: " << i << ":("
-                     << it->x << ", "
-                     << it->y << ")\n";
-         }
-         if (it == transformation_begin) {
-             logFile << "transformation_begin: " << i << ":("
-                     << it->x << ", "
-                     << it->y << ")\n";
-         }
-         if (it == transformation_end) {
-             logFile << "transformation_end: " << i << ":("
-                     << it->x << ", "
-                     << it->y << ")\n";
-         }
-     }
- 
-     logFile << "\n";
-   }
- 
-   // const double MAX_ANGLE_THRESHOLD = 40.0 * M_PI / 180.0; // 40 degrees in radians
-   // auto it_begin = transformation_begin;
-   // auto it_end = transformation_end;
-   // double initial_dx = it_end->x - it_begin->x;
-   // double initial_dy = it_end->y - it_begin->y;
-   // double initial_angle = std::fabs(std::atan2(initial_dy, initial_dx));
- 
-   // Log initial direction for debugging
-   // if (logFile.is_open()) {
-   //   logFile << "Initial angle: " << initial_angle * 180.0 / M_PI << " degrees\n";
-   // }
-
-   int min_ref_point_dist = 1;
 
    // Check for sharp turns by looking for significant changes in direction between segments
-   if (true) { // if (initial_angle > MAX_ANGLE_THRESHOLD)
-     // Get reference direction from first few points
-     auto it_start = transformation_begin;
-     auto it_ref = std::next(it_start, std::min(min_ref_point_dist, static_cast<int>(std::distance(it_start, transformation_end))));
-     // auto it_ref = std::next(it_start);
+
+   // Get reference direction from first few points
+   auto it_start = transformation_begin;
+   auto it_ref = std::next(it_start, std::min(min_refpoint_dist_, static_cast<int>(std::distance(it_start, transformation_end))));
+   // auto it_ref = std::next(it_start);
+  
+   double ref_dx = it_ref->x - it_start->x;
+   double ref_dy = it_ref->y - it_start->y;
+   double ref_angle = std::atan2(ref_dy, ref_dx) * (180 / M_PI);
+
+   file_logger.logPlanTransformationDWB(
+     robot_pose, global_plan_,
+     transformation_begin, transformation_end,
+     prune_point, prune_plan_,
+     transform_start_threshold, transform_end_threshold,
+     ref_dx, ref_dy, ref_angle,
+     "transformGlobalPlan_dwb.txt"
+   );
      
-     double ref_dx = it_ref->x - it_start->x;
-     double ref_dy = it_ref->y - it_start->y;
-     double ref_angle = std::atan2(ref_dy, ref_dx) * (180 / M_PI);
-     
-     if (logFile.is_open()) {
-       logFile << "Reference direction: (" << ref_dx << ", " << ref_dy << ")\n";
-       logFile << "Reference angle: " << ref_angle << " degrees\n";
+   // Scan ahead for sharp turns relative to our reference direction
+   for (auto it = std::next(it_start); it != transformation_end; ++it) {
+     if (std::distance(it_start, it) < min_refpoint_dist_) continue; // Skip the first few points used for reference
+
+     auto it_next = it;
+
+     if (it < transformation_end) {
+       it_next = std::next(it);
      }
-     
-     // Scan ahead for sharp turns relative to our reference direction
 
-     for (auto it = std::next(it_start); it != transformation_end; ++it) {
-       if (std::distance(it_start, it) < min_ref_point_dist) continue; // Skip the first few points used for reference
+     // Calculate direction of current segment
+     double dx = it->x - it_start->x;
+     double dy = it->y - it_start->y;
 
-       auto it_next = it;
+     double dx_next = it_next->x - it->x;
+     double dy_next = it_next->y - it->y;
+    
+     double current_angle = std::atan2(dy, dx) * (180 / M_PI);
+     double next_angle = std::atan2(dy_next, dx_next) * (180 / M_PI);
+    
+     auto normalize_angle = [](double angle) {
+       while (angle > 180.0) angle -= 360.0;
+       while (angle < -180.0) angle += 360.0;
+       return angle;
+     };
 
-       if (it < transformation_end) {
-        it_next = std::next(it);
-       }
+     // Calculate angle difference (normalized to [-π, π])
+     double angle_diff = normalize_angle(current_angle - ref_angle);
+     double next_angle_diff = normalize_angle(next_angle - ref_angle);
+      
+     // If angle difference exceeds our threshold, we've found a sharp turn
+     if (std::abs(angle_diff) > max_angle_change_) {
+       // Found a sharp turn, limit the planning horizon
+       angle_limited_end = it;
 
-       // Calculate direction of current segment
-       double dx = it->x - it_start->x;
-       double dy = it->y - it_start->y;
+       file_logger.logSharpAngleDWB(
+         angle_diff, next_angle_diff,
+         transformation_begin, it, it_next,
+         true, "transformGlobalPlan_dwb.txt"
+       );
 
-       double dx_next = it_next->x - it->x;
-       double dy_next = it_next->y - it->y;
-       
-       // Skip very small segments
-      //  double segment_length = std::sqrt(dx*dx + dy*dy);
-      //  if (segment_length < 0.05) {
-      //    continue;
-      //  }
+       break;
+     }
 
-      //  double next_point_len = std::sqrt(dx_next*dx_next + dy_next*dy_next);
-       
-       double current_angle = std::atan2(dy, dx) * (180 / M_PI);
-       double next_angle = std::atan2(dy_next, dx_next) * (180 / M_PI);
-       
-       auto normalize_angle = [](double angle) {
-        while (angle > 180.0) angle -= 360.0;
-        while (angle < -180.0) angle += 360.0;
-        return angle;
-      };
+     if (std::abs(next_angle_diff) > max_next_angle_change_) {
+       // Found a sharp turn, limit the planning horizon
+       angle_limited_end = it_next;
+      
+       file_logger.logSharpAngleDWB(
+         angle_diff, next_angle_diff,
+         transformation_begin, it, it_next,
+         false, "transformGlobalPlan_dwb.txt"
+       );
 
-       // Calculate angle difference (normalized to [-π, π])
-       double angle_diff = normalize_angle(current_angle - ref_angle);
-       double next_angle_diff = normalize_angle(next_angle - ref_angle);
-       // while (angle_diff > M_PI) angle_diff -= 2*M_PI;
-       // while (angle_diff < -M_PI) angle_diff += 2*M_PI;
-       
-       // if (logFile.is_open()) {
-       //   logFile << "Point " << std::distance(transformation_begin, it) << ": ("
-       //           << it->x << ", " << it->y << ")\n";
-       //   logFile << "  Current angle: " << current_angle * 180.0 / M_PI << "°\n";
-       //   logFile << "  Angle diff: " << angle_diff * 180.0 / M_PI << "°\n";
-       // }
-       
-       // If angle difference exceeds our threshold, we've found a sharp turn
-       if (std::abs(angle_diff) > MAX_ANGLE_CHANGE) {
-         // Found a sharp turn, limit the planning horizon
-         angle_limited_end = it;
-         
-         if (logFile.is_open()) {
-           logFile << "Sharp turn detected at point " << std::distance(transformation_begin, it)
-                   << " with angle difference of " << angle_diff << "°\n";
-         }
-         break;
-       }
-
-       if (std::abs(next_angle_diff) > MAX_NEXT_ANGLE_CHANGE) {
-        // Found a sharp turn, limit the planning horizon
-        angle_limited_end = it_next;
-        
-        if (logFile.is_open()) {
-          logFile << "Traversing same route " << std::distance(transformation_begin, it)
-                  << ":(" << it->x << ", "
-                  << it->y << ") -> "
-                  << std::distance(transformation_begin, it_next)
-                  << ":(" << it_next->x << ", "
-                  << it_next->y << ") "
-                  << "with next angle difference of " << next_angle_diff << "°\n";
-        }
-        break;
-      }
+       break;
      }
    }
+
    
    // Use the angle-limited end point if it's closer than the distance-based end point
    if (angle_limited_end < transformation_end) {
      transformation_end = angle_limited_end;
- 
-     // Ensure we have at least a minimum number of points in the transformed plan
-    //  if (std::distance(transformation_begin, transformation_end) < 2) {
-    //    auto safe_end = std::next(transformation_begin, 
-    //                             std::min(2, static_cast<int>(std::distance(transformation_begin, global_plan_.poses.end()))));
-    //    transformation_end = safe_end;
-    //  }
-     
-     if (logFile.is_open()) {
-       logFile << "Plan horizon limited due to sharp turn.\n";
-       logFile << "Final transformation_end position: " 
-               << std::distance(transformation_begin, transformation_end) << "\n";
-     }
    }
  
    // Transform the plan into the robot's frame of reference.
@@ -724,34 +650,12 @@
      transformation_begin, transformation_end,
      std::back_inserter(transformed_plan.poses),
      transformGlobalPoseToLocal);
- 
-   // Log call info
-   if (logFile.is_open()) {
-     // Log iterator positions after adjustment
-     
-      logFile << "Adjusted transformation_end " << std::distance(transformation_begin, transformation_end) << ":("
-              << transformation_end->x << ", "
-              << transformation_end->y << ")\n";
- 
-     // Log global plan before transform
-     logFile << "Final plan_before_transform (" << std::distance(transformation_begin, transformation_end) << " points): \n";
-     size_t i = 0;
-     for (auto it = transformation_begin; it != transformation_end; ++it, ++i) {
-         logFile << i << ":(" << it->x << ", "
-                 << it->y << ")";
-         if (i % 5 == 0 && i != 0) {
-           logFile << "\n";
-         }
-         else {
-             if (std::next(it) != transformation_end) {
-             logFile << ", ";
-         }
-       }
-     }
-     logFile << "\n\n";
-   }
- 
-   callCount++;
+
+   file_logger.logFinalTranformEndDWB(
+     transformation_begin,
+     transformation_end,
+     "transformGlobalPlan_dwb.txt"
+   );
  
    // Remove the portion of the global plan that we've already passed so we don't
    // process it on the next iteration.
