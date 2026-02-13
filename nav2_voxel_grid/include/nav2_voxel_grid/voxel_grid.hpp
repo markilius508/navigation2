@@ -112,6 +112,8 @@ public:
 
     unsigned int marked_bits = *col >> 16;
 
+    RCLCPP_DEBUG(logger, "Marked bits %u", marked_bits);
+
     // make sure the number of bits in each is below our thresholds
     return !bitsBelowThreshold(marked_bits, marked_threshold);
   }
