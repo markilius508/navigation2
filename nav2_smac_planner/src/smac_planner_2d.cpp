@@ -267,7 +267,7 @@ nav_msgs::msg::Path SmacPlanner2D::createPlan(
   }
 
   if (!error.empty()) {
-    RCLCPP_WARN(
+    RCLCPP_DEBUG(
       _logger,
       "%s: failed to create plan, %s.",
       _name.c_str(), error.c_str());

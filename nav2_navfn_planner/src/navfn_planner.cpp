@@ -172,7 +172,7 @@ nav_msgs::msg::Path NavfnPlanner::createPlan(
   }
 
   if (!makePlan(start.pose, goal.pose, tolerance_, path)) {
-    RCLCPP_WARN(
+    RCLCPP_DEBUG(
       logger_, "%s: failed to create plan with "
       "tolerance %.2f.", name_.c_str(), tolerance_);
   }
