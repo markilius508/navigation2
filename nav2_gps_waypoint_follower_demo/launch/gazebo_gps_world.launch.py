@@ -1,72 +1,77 @@
-# Copyright (c) 2018 Intel Corporation
-# Copyright (C) 2024 Stevedan Ogochukwu Omodolor Omodia
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import os
-
+import tempfile
+from pathlib import Path
 from ament_index_python.packages import get_package_share_directory
-
-
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
-    ExecuteProcess,
+    TimerAction,
 )
-
-from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-
 from launch_ros.actions import Node
-
+from launch.actions import AppendEnvironmentVariable
+import xacro
 
 def generate_launch_description():
     sim_dir = get_package_share_directory("nav2_minimal_tb3_sim")
     tutorial_dir = get_package_share_directory("nav2_gps_waypoint_follower_demo")
+    ros_gz_sim = get_package_share_directory("ros_gz_sim")
+    bringup_dir = get_package_share_directory('nav2_minimal_tb3_sim')
 
     # Create the launch configuration variables
     use_sim_time = LaunchConfiguration("use_sim_time")
-
-    # Decalre the launch arguments
+    
+    # Declare the launch arguments
     declare_use_sim_time_cmd = DeclareLaunchArgument(
         "use_sim_time",
         default_value="True",
         description="Use simulation (Gazebo) clock if true",
     )
 
-    world_sdf = os.path.join(tutorial_dir, "worlds", "tb3_sonoma_raceway.sdf.xacro")
+    # Process the world xacro file
+    world_sdf_xacro = os.path.join(tutorial_dir, "worlds", "tb3_sonoma_raceway.sdf.xacro")
+    world_xml = xacro.process_file(world_sdf_xacro).toxml()
     robot_sdf = os.path.join(sim_dir, "urdf", "gz_waffle_gps.sdf.xacro")
 
-    urdf = os.path.join(sim_dir, "urdf", "turtlebot3_waffle_gps.urdf")
-    with open(urdf, "r") as infp:
-        robot_description = infp.read()
+    # Get robot description from URDF
+    urdf_path = os.path.join(sim_dir, "urdf", "turtlebot3_waffle_gps.urdf")
+    with open(urdf_path, 'r') as f:
+        robot_description = f.read()
+    
+    # Save to temporary file
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.sdf', delete=False) as f:
+        f.write(world_xml)
+        world_sdf = f.name
 
-    gazebo_server = ExecuteProcess(
-        cmd=["gz", "sim", "-r", "-s", world_sdf],
-        output="screen",
-    )
-
-    gazebo_client = IncludeLaunchDescription(
+    # --- NEW GAZEBO SPLIT LAUNCH STYLE ---
+    
+    # Gazebo Server
+    gzserver_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(
-                get_package_share_directory("ros_gz_sim"), "launch", "gz_sim.launch.py"
-            )
+            os.path.join(ros_gz_sim, 'launch', 'gz_sim.launch.py')
         ),
-        launch_arguments={"gz_args": ["-v4 -g "]}.items(),
+        launch_arguments={
+            'gz_args': [f"-r -s -v 2 {world_sdf}"], 
+            'on_exit_shutdown': 'true'
+        }.items()
     )
 
-    gz_robot = IncludeLaunchDescription(
+    # Gazebo Client (GUI)
+    gzclient_cmd = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(ros_gz_sim, 'launch', 'gz_sim.launch.py')
+        ),
+        launch_arguments={
+            'gz_args': '-g -v 2', 
+            'on_exit_shutdown': 'true'
+        }.items()
+    )
+
+    # -------------------------------------
+
+    spawn_robot = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(sim_dir, "launch", "spawn_tb3_gps.launch.py")
         ),
@@ -88,18 +93,38 @@ def generate_launch_description():
         name="robot_state_publisher",
         output="screen",
         parameters=[
-            {"use_sim_time": use_sim_time, "robot_description": robot_description}
+            {"use_sim_time": use_sim_time,
+             "robot_description": robot_description}
         ],
+    )
+
+    set_env_vars_resources = AppendEnvironmentVariable(
+        'GZ_SIM_RESOURCE_PATH', os.path.join(bringup_dir, 'models')
+    )
+    set_env_vars_resources2 = AppendEnvironmentVariable(
+        'GZ_SIM_RESOURCE_PATH', str(Path(os.path.join(bringup_dir)).parent.resolve())
     )
 
     ld = LaunchDescription()
 
-    # Declare the launch options
     ld.add_action(declare_use_sim_time_cmd)
-
-    ld.add_action(gz_robot)
-    ld.add_action(gazebo_server)
-    ld.add_action(gazebo_client)
-
+    
+    # Add server and client separately
+    ld.add_action(set_env_vars_resources)
+    ld.add_action(set_env_vars_resources2)
+    ld.add_action(gzserver_cmd)
+    ld.add_action(gzclient_cmd)
+    ld.add_action(spawn_robot)
     ld.add_action(start_robot_state_publisher_cmd)
+    
+    # ld.add_action(TimerAction(
+    #     period=3.0,
+    #     actions=[spawn_robot]
+    # ))
+
+    # ld.add_action(TimerAction(
+    #     period=10.0,
+    #     actions=[start_robot_state_publisher_cmd]
+    # ))
+    
     return ld

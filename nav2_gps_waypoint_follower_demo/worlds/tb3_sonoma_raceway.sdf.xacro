@@ -1,34 +1,34 @@
 <?xml version="1.0"?>
 <sdf version="1.6" xmlns:xacro="http://www.ros.org/wiki/xacro">
-  <xacro:arg name="headless" default="true"/>
+  <xacro:arg name="headless" default="false"/>
 
   <world name="default">
     <plugin
       filename="gz-sim-physics-system"
-      name="gz::sim::systems::Physics">
+      name="ignition::gazebo::v6::systems::Physics">
     </plugin>
     <plugin
       filename="gz-sim-user-commands-system"
-      name="gz::sim::systems::UserCommands">
+      name="ignition::gazebo::v6::systems::UserCommands">
     </plugin>
     <plugin
       filename="gz-sim-navsat-system"
-      name="gz::sim::systems::NavSat">
+      name="ignition::gazebo::v6::systems::NavSat">
     </plugin>
   <xacro:unless value="$(arg headless)">
     <plugin
       filename="gz-sim-scene-broadcaster-system"
-      name="gz::sim::systems::SceneBroadcaster">
+      name="ignition::gazebo::v6::systems::SceneBroadcaster">
     </plugin>
   </xacro:unless>
     <plugin
       filename="gz-sim-sensors-system"
-      name="gz::sim::systems::Sensors">
+      name="ignition::gazebo::v6::systems::Sensors">
       <render_engine>ogre2</render_engine>
     </plugin>
     <plugin
       filename="gz-sim-imu-system"
-      name="gz::sim::systems::Imu">
+      name="ignition::gazebo::v6::systems::Imu">
     </plugin>
 
     <!-- Set the coordinates for the world origin-->
@@ -61,16 +61,16 @@
                 <geometry>
                     <plane>
                         <normal>0 0 1</normal>
-                        <size>100 100</size>
+                        <size>10000 10000</size>
                     </plane>
                 </geometry>
                 <max_contacts>10</max_contacts>
             </collision>
-            <visual name='visual'>
+            <!-- <visual name='visual'>
                 <geometry>
                     <plane>
                         <normal>0 0 1</normal>
-                        <size>100 100</size>
+                        <size>10000 10000</size>
                     </plane>
                 </geometry>
                 <material>
@@ -78,10 +78,101 @@
                     <diffuse>0.8 0.8 0.8 1</diffuse>
                     <specular>0.8 0.8 0.8 1</specular>
                 </material>
-            </visual>
+            </visual> -->
         </link>
     </model>
 
+    <model name='breakfast_menu'>
+      <link name='link_0'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>0.25 0.18 0.18</size>
+            </box>
+          </geometry>
+        </visual>
+        <collision name='collision_0'>
+          <geometry>
+            <box>
+              <size>0.25 0.18 0.18</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <pose>0 0 0 0 -0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 -0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>0.70863 -5.82403 0.33 0.013121 0.015361 0.00015</pose>
+      <static>false</static>
+      <self_collide>false</self_collide>
+    </model>
+
+    <model name='box'>
+      <pose>0.862016 -4.85948 0.809314 0.012514 0.015462 0.000228</pose>
+      <link name='box_link'>
+        <inertial>
+          <inertia>
+            <ixx>0.16666</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>0.16666</iyy>
+            <iyz>0</iyz>
+            <izz>0.16666</izz>
+          </inertia>
+          <mass>1</mass>
+          <pose>0 0 0 0 -0 0</pose>
+        </inertial>
+        <collision name='box_collision'>
+          <geometry>
+            <box>
+              <size>1 1 1</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <visual name='box_visual'>
+          <geometry>
+            <box>
+              <size>1 1 1</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.3 0.3 0.3 1</ambient>
+            <diffuse>0.7 0.7 0.7 1</diffuse>
+            <specular>1 1 1 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 -0 0</pose>
+        <enable_wind>false</enable_wind>
+      </link>
+      <static>false</static>
+      <self_collide>false</self_collide>
+    </model>
+    
     <scene>
       <shadows>0</shadows>
     </scene>
